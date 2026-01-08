@@ -149,3 +149,6 @@ except Exception as e:
     print(f"❌ Unexpected error: {e}")
     if ser:
         ser.close()
+
+
+#ngrok config add-authtoken 37zokXl0JHhpuiPXFdoRd5ZZyXC_7oEBHrJCssUB8p8FjvAHp
