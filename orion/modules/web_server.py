@@ -16,11 +16,14 @@ logger = logging.getLogger(__name__)
 class VideoServer:
     """Manages Flask web server and video streaming"""
     
-    def __init__(self, camera_manager):
+    def __init__(self, camera_manager, sentinel=None):
         self.camera = camera_manager
+        self.sentinel = sentinel  # Reference to OrionSentinel for remote control
         self.app = Flask(__name__)
         self.public_url = None
         self.server_thread = None
+        self.active_viewers = 0  # Track number of stream viewers
+        self.last_stream_access = 0  # Timestamp of last stream request
         
         # Register routes
         self._setup_routes()
@@ -31,6 +34,15 @@ class VideoServer:
         @self.app.route('/stream')
         def video_stream():
             """Video stream endpoint"""
+            # Update last access time
+            import time
+            self.last_stream_access = time.time()
+            
+            # Ensure camera is active
+            if self.sentinel and not self.camera.is_active:
+                logger.info("📹 Stream requested - initializing camera")
+                self.camera.initialize()
+            
             return Response(
                 self._generate_stream(),
                 mimetype='multipart/x-mixed-replace; boundary=frame'
@@ -40,16 +52,60 @@ class VideoServer:
         def health():
             """Health check endpoint"""
             return {"status": "ok", "camera": self.camera.is_opened()}
+        
+        @self.app.route('/control/activate', methods=['POST'])
+        def activate_intruder():
+            """Backend can activate intruder mode on demand"""
+            if self.sentinel:
+                self.sentinel.request_intruder_mode()
+                return {"status": "success", "mode": "INTRUDER"}, 200
+            return {"status": "error", "message": "Sentinel not configured"}, 500
+        
+        @self.app.route('/control/deactivate', methods=['POST'])
+        def deactivate_intruder():
+            """Backend can deactivate intruder mode"""
+            if self.sentinel:
+                self.sentinel.request_sentry_mode()
+                return {"status": "success", "mode": "SENTRY"}, 200
+            return {"status": "error", "message": "Sentinel not configured"}, 500
+        
+        @self.app.route('/status')
+        def get_status():
+            """Get current sentinel status"""
+            if self.sentinel:
+                import time
+                return {
+                    "mode": self.sentinel.mode,
+                    "camera_active": self.camera.is_active,
+                    "ai_loaded": self.sentinel.ai.is_loaded(),
+                    "stream_idle_seconds": int(time.time() - self.last_stream_access) if self.last_stream_access else 0
+                }, 200
+            return {"status": "error"}, 500
+        
+        @self.app.route('/stream/keepalive', methods=['POST'])
+        def stream_keepalive():
+            """Backend sends this periodically to keep stream alive"""
+            import time
+            self.last_stream_access = time.time()
+            return {"status": "ok", "message": "Stream kept alive"}, 200
     
     def _generate_stream(self):
         """Generate video stream frames"""
         while True:
-            frame_bytes = self.camera.get_jpeg_frame()
-            if frame_bytes:
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + 
-                       frame_bytes + 
-                       b'\r\n')
+            try:
+                frame_bytes = self.camera.get_jpeg_frame()
+                if frame_bytes:
+                    yield (b'--frame\r\n'
+                           b'Content-Type: image/jpeg\r\n\r\n' + 
+                           frame_bytes + 
+                           b'\r\n')
+                else:
+                    # No frame available, wait and retry
+                    time.sleep(0.1)
+            except Exception as e:
+                logger.error(f"❌ Stream error: {e}")
+                time.sleep(0.5)
+            
             time.sleep(0.05)  # ~20 FPS
     
     def start_tunnel(self):

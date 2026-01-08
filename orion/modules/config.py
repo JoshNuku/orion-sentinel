@@ -54,6 +54,7 @@ THREAT_CLASSES = [
 SENSOR_POLL_INTERVAL = 0.5   # Seconds between sensor checks
 ALERT_COOLDOWN = 30          # Seconds between consecutive alerts
 STREAM_DURATION = 60         # Seconds to stay in INTRUDER mode
+STREAM_TIMEOUT = 300         # Seconds of inactivity before stopping camera (5 min)
 HEARTBEAT_INTERVAL = 60      # Seconds between status updates
 
 # ============================================================================
