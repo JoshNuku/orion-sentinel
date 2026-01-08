@@ -1,0 +1,24 @@
+# Project ORION - Requirements
+# Python 3.7+
+
+# Computer Vision & AI
+opencv-python>=4.5.0
+numpy>=1.19.0
+
+# Web Framework
+Flask>=2.0.0
+
+# Networking
+requests>=2.25.0
+pyngrok>=5.0.0
+
+# Hardware Interface (Raspberry Pi)
+RPi.GPIO>=0.7.0
+
+# Serial Communication (for GPS)
+pyserial>=3.5
+
+# I2C/Hardware libs (for sensors & microphone)
+adafruit-circuitpython-ads1x15>=2.2.0
+adafruit-blinka>=8.0.0
+

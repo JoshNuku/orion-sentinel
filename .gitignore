@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+*.log
+debug_frame_*.jpg
+*.jpeg
+*.jpg
+*.png
+
+# Secrets
+.env
+*.key
+ngrok.yml
+
+# Temporary files
+*.tmp
+*.bak
