@@ -65,39 +65,27 @@ class IntelligenceUnit:
     def analyze_frame(self, frame):
         """
         Analyze frame for threats using YOLOv3-Tiny
-        
         Returns:
             tuple: (threat_type, confidence) or (None, 0.0) if no threat
         """
         if not self.model_loaded:
             return None, 0.0
-        
         try:
             height, width = frame.shape[:2]
-            
-            # Create blob from frame
             blob = cv2.dnn.blobFromImage(
-                frame, 
-                1/255.0, 
+                frame,
+                1/255.0,
                 (config.INPUT_SIZE, config.INPUT_SIZE),
-                swapRB=True, 
+                swapRB=True,
                 crop=False
             )
-            
-            # Forward pass
             self.net.setInput(blob)
             outputs = self.net.forward(self.output_layers)
-            
-            # Parse detections
             detections = self._parse_detections(outputs, width, height)
-            
-            # Debug: Save frame if enabled
             self.frame_count += 1
-            if config.DEBUG_SAVE_FRAMES and self.frame_count % 30 == 0:  # Every 30 frames
+            if config.DEBUG_SAVE_FRAMES and self.frame_count % 30 == 0:
                 cv2.imwrite(f"debug_frame_{self.frame_count}.jpg", frame)
                 logger.info(f"💾 Saved debug_frame_{self.frame_count}.jpg")
-            
-            # Log all detections (debug mode)
             if detections:
                 if config.DEBUG_SHOW_ALL_DETECTIONS:
                     logger.info(f"🔍 Detected {len(detections)} object(s):")
@@ -106,18 +94,38 @@ class IntelligenceUnit:
             else:
                 if config.DEBUG_SHOW_ALL_DETECTIONS:
                     logger.info(f"🔍 No objects detected in frame {self.frame_count} (size: {width}x{height})")
-            
+
+            # Map YOLO class names to backend threatType values
+            def map_threat_type(class_name):
+                # Vehicles
+                if class_name in ["car"]:
+                    return "car"
+                if class_name in ["truck"]:
+                    return "truck"
+                if class_name in ["bus"]:
+                    return "bus"
+                if class_name in ["motorcycle"]:
+                    return "motorcycle"
+                # Person
+                if class_name == "person":
+                    return "person"
+                # Animal (COCO: dog, cat, bird, horse, sheep, cow, elephant, bear, zebra, giraffe)
+                if class_name in ["dog", "cat", "bird", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe"]:
+                    return "animal"
+                # Unknown
+                return "unknown"
+
             # Filter for threat classes
-            threats = [d for d in detections if d[0] in config.THREAT_CLASSES]
-            
+            threats = [d for d in detections if map_threat_type(d[0]) != "unknown"]
+
             if threats:
                 # Return highest confidence threat
                 best_threat = max(threats, key=lambda x: x[1])
-                logger.warning(f"⚠️  THREAT: {best_threat[0]} ({best_threat[1]:.2%})")
-                return best_threat[0], best_threat[1]
-            
-            return None, 0.0
-            
+                mapped_type = map_threat_type(best_threat[0])
+                logger.warning(f"⚠️  THREAT: {mapped_type} ({best_threat[1]:.2%})")
+                return mapped_type, best_threat[1]
+
+            return "unknown", 0.0
         except Exception as e:
             logger.error(f"❌ Inference error: {e}")
             return None, 0.0

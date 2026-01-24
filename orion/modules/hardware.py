@@ -37,6 +37,25 @@ class GPIOSensors:
     def any_trigger(self):
         """Check if any sensor is triggered"""
         return self.motion_detected() or self.vibration_detected()
+
+    def get_triggered_sensors(self):
+        """Return a list of backend-compliant sensor names that are currently triggered.
+
+        Returns:
+            list: e.g. ["pir", "vibration"] or empty list
+        """
+        triggered = []
+        try:
+            if self.motion_detected():
+                triggered.append("pir")
+        except Exception:
+            pass
+        try:
+            if self.vibration_detected():
+                triggered.append("vibration")
+        except Exception:
+            pass
+        return triggered
     
     def cleanup(self):
         """Clean up GPIO resources"""

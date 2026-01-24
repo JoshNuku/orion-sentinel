@@ -56,6 +56,7 @@ ALERT_COOLDOWN = 30          # Seconds between consecutive alerts
 STREAM_DURATION = 60         # Seconds to stay in INTRUDER mode
 STREAM_TIMEOUT = 300         # Seconds of inactivity before stopping camera (5 min)
 HEARTBEAT_INTERVAL = 60      # Seconds between status updates
+SENSOR_DEBOUNCE_SECONDS = 5  # Seconds to debounce repeated sensor triggers
 
 # ============================================================================
 # CAMERA SETTINGS

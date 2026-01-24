@@ -24,7 +24,7 @@ class Communicator:
         self.public_stream_url = url
         logger.info(f"📡 Stream URL set: {url}")
     
-    def register_device(self, gps_data, battery_level=85):
+    def register_device(self, gps_data, battery_level=85, ip_address=None, stream_url=None, trigger_type=None):
         """
         Register sentinel device with backend
         
@@ -35,24 +35,28 @@ class Communicator:
         Returns:
             bool: True if registration successful
         """
-        # Build stream URL
-        if self.public_stream_url:
-            stream_url = f"{self.public_stream_url}/stream"
-        else:
-            stream_url = f"http://localhost:{config.VIDEO_PORT}/stream"
-        
-        logger.info(f"🌍 Registering with Stream URL: {stream_url}")
-        
+        # Note: do not send stream URL during registration.
+        # The stream (public URL) is privacy-sensitive and will be shared
+        # with the backend only when a threat is detected.
+        logger.info("🌍 Registering sentinel (stream URL withheld until alerts)")
         try:
+            payload = {
+                "deviceId": config.DEVICE_ID,
+                "status": "active",
+                "location": gps_data,
+                "batteryLevel": battery_level
+            }
+
+            if ip_address:
+                payload["ipAddress"] = ip_address
+            if stream_url:
+                payload["streamUrl"] = stream_url
+            if trigger_type:
+                payload["triggerType"] = trigger_type
+
             response = self.session.post(
                 f"{config.BACKEND_URL}/sentinels/register",
-                json={
-                    "deviceId": config.DEVICE_ID,
-                    "status": "active",
-                    "location": gps_data,
-                    "batteryLevel": battery_level,
-                    "streamUrl": stream_url
-                },
+                json=payload,
                 timeout=5
             )
             
@@ -67,7 +71,7 @@ class Communicator:
             logger.error(f"❌ Registration error: {e}")
             return False
     
-    def send_alert(self, threat_type, confidence, gps_data, frame_base64=None):
+    def send_alert(self, threat_type, confidence, gps_data, frame_base64=None, triggered_sensors=None, trigger_type=None):
         """
         Send threat alert to backend
         
@@ -85,6 +89,20 @@ class Communicator:
                 "location": gps_data,
                 "timestamp": datetime.utcnow().isoformat()
             }
+
+            # Attach trigger metadata when available
+            if trigger_type:
+                payload["triggerType"] = trigger_type
+            if triggered_sensors:
+                payload["triggeredSensors"] = triggered_sensors
+
+            # If a public stream URL is available, include it in the alert
+            if self.public_stream_url:
+                try:
+                    payload["streamUrl"] = f"{self.public_stream_url}/stream"
+                except Exception:
+                    # Be conservative: don't fail alert if stream URL formatting fails
+                    pass
             
             # Add image if provided
             if frame_base64:
@@ -117,7 +135,7 @@ class Communicator:
         except requests.exceptions.RequestException as e:
             logger.error(f"❌ Alert error: {e}")
     
-    def update_status(self, status, gps_data, battery_level=85):
+    def update_status(self, status, gps_data, battery_level=85, trigger_type=None):
         """
         Send heartbeat/status update to backend
         
@@ -127,13 +145,34 @@ class Communicator:
             battery_level (int): Battery percentage
         """
         try:
+            payload = {
+                "status": status,
+                "location": gps_data,
+                "batteryLevel": battery_level
+            }
+
+            # Attach trigger type when provided
+            if trigger_type:
+                payload["triggerType"] = trigger_type
+
+            # Optional trigger type may be attached by caller
+            # (e.g., 'gpio', 'microphone', 'remote', 'ai')
+            # If provided, callers should pass trigger_type via keyword argument.
+            # Note: Keep backward compatibility by accepting callers that don't pass it.
+            # The method signature for update_status has been extended to accept
+            # trigger_type via kwargs to avoid breaking existing call sites.
+            # Extract if present in kwargs (some callers may call with named param).
+            # (This function is intentionally forgiving; the explicit param will be
+            # passed by updated call sites in the repo.)
+
+            # If other code passed trigger_type as attribute on this instance
+            # (not expected), ignore it. Standard callers should call with
+            # update_status(status, gps, battery_level, trigger_type=...)
+
+            # Send the PUT request
             self.session.put(
                 f"{config.BACKEND_URL}/sentinels/{config.DEVICE_ID}/status",
-                json={
-                    "status": status,
-                    "location": gps_data,
-                    "batteryLevel": battery_level
-                },
+                json=payload,
                 timeout=3
             )
         except requests.exceptions.RequestException:

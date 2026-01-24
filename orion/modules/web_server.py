@@ -34,15 +34,19 @@ class VideoServer:
         @self.app.route('/stream')
         def video_stream():
             """Video stream endpoint"""
-            # Update last access time
             import time
             self.last_stream_access = time.time()
-            
+
+            # Always ensure ngrok tunnel is running for manual/remote requests
+            if config.NGROK_ENABLED and not self.public_url:
+                logger.info("🔄 (Re)starting ngrok tunnel for stream request")
+                self.start_tunnel()
+
             # Ensure camera is active
             if self.sentinel and not self.camera.is_active:
                 logger.info("📹 Stream requested - initializing camera")
                 self.camera.initialize()
-            
+
             return Response(
                 self._generate_stream(),
                 mimetype='multipart/x-mixed-replace; boundary=frame'
@@ -57,6 +61,17 @@ class VideoServer:
         def activate_intruder():
             """Backend can activate intruder mode on demand"""
             if self.sentinel:
+                # Handle optional ngrok header (some clients send this)
+                ngrok_header = None
+                try:
+                    ngrok_header = self.app.request.headers.get('ngrok-skip-browser-warning')
+                except Exception:
+                    # Flask may not expose request in this closure in some contexts; ignore
+                    ngrok_header = None
+
+                if ngrok_header:
+                    logger.info(f"Received ngrok header for activate: {ngrok_header}")
+
                 self.sentinel.request_intruder_mode()
                 return {"status": "success", "mode": "INTRUDER"}, 200
             return {"status": "error", "message": "Sentinel not configured"}, 500
@@ -65,6 +80,14 @@ class VideoServer:
         def deactivate_intruder():
             """Backend can deactivate intruder mode"""
             if self.sentinel:
+                try:
+                    ngrok_header = self.app.request.headers.get('ngrok-skip-browser-warning')
+                except Exception:
+                    ngrok_header = None
+
+                if ngrok_header:
+                    logger.info(f"Received ngrok header for deactivate: {ngrok_header}")
+
                 self.sentinel.request_sentry_mode()
                 return {"status": "success", "mode": "SENTRY"}, 200
             return {"status": "error", "message": "Sentinel not configured"}, 500
@@ -88,6 +111,56 @@ class VideoServer:
             import time
             self.last_stream_access = time.time()
             return {"status": "ok", "message": "Stream kept alive"}, 200
+
+        @self.app.route('/control/request_stream', methods=['POST'])
+        def request_stream():
+            """Backend can request the sentinel to provide/start the public stream URL.
+
+            This endpoint returns quickly (200 accepted). The tunnel startup runs
+            in the background. When a public URL becomes available the sentinel
+            will update the backend registration with `streamUrl` and `ipAddress`.
+            """
+            if not self.sentinel:
+                return {"status": "error", "message": "Sentinel not configured"}, 500
+
+            # Always (re)start ngrok tunnel for manual/remote requests
+            def _start_and_register():
+                try:
+                    public = self.start_tunnel()
+                    if public:
+                        # Update communicator and register with backend including ipAddress
+                        if hasattr(self.sentinel, 'comms') and self.sentinel.comms:
+                            try:
+                                self.sentinel.comms.set_stream_url(public)
+
+                                # Attempt to discover local IP for backend record
+                                ip_addr = None
+                                try:
+                                    import socket
+                                    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                                    try:
+                                        s.connect(('8.8.8.8', 80))
+                                        ip_addr = s.getsockname()[0]
+                                    finally:
+                                        s.close()
+                                except Exception:
+                                    ip_addr = None
+
+                                # Register device with backend including streamUrl and ipAddress
+                                try:
+                                    self.sentinel.comms.register_device(self.sentinel.gps.get_location(), battery_level=85, ip_address=ip_addr, stream_url=f"{public}/stream")
+                                except Exception as e:
+                                    logger.error(f"Failed to register device with stream URL: {e}")
+                            except Exception as e:
+                                logger.error(f"Failed to update communicator with public URL: {e}")
+                except Exception as e:
+                    logger.error(f"Failed to start tunnel in background: {e}")
+
+            bg = threading.Thread(target=_start_and_register, daemon=True)
+            bg.start()
+
+            # Return accepted quickly; backend may poll registration or status endpoint
+            return {"status": "accepted", "message": "Stream is being prepared"}, 200
     
     def _generate_stream(self):
         """Generate video stream frames"""

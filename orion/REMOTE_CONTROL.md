@@ -5,7 +5,9 @@ The backend can now control the sentinel remotely via HTTP requests to the ngrok
 ## Endpoints
 
 ### 1. Activate Intruder Mode (Start AI Detection)
+
 **Request:**
+
 ```bash
 POST https://your-ngrok-url.ngrok-free.app/control/activate
 # or
@@ -13,6 +15,7 @@ POST http://192.168.x.x:8080/control/activate
 ```
 
 **Response:**
+
 ```json
 {
   "status": "success",
@@ -21,6 +24,7 @@ POST http://192.168.x.x:8080/control/activate
 ```
 
 **What it does:**
+
 - Activates AI threat detection
 - Keeps camera streaming
 - Extends monitoring duration
@@ -29,7 +33,9 @@ POST http://192.168.x.x:8080/control/activate
 ---
 
 ### 2. Deactivate Intruder Mode (Return to Sentry)
+
 **Request:**
+
 ```bash
 POST https://your-ngrok-url.ngrok-free.app/control/deactivate
 # or
@@ -37,6 +43,7 @@ POST http://192.168.x.x:8080/control/deactivate
 ```
 
 **Response:**
+
 ```json
 {
   "status": "success",
@@ -45,6 +52,7 @@ POST http://192.168.x.x:8080/control/deactivate
 ```
 
 **What it does:**
+
 - Unloads AI model (saves resources)
 - Continues camera streaming
 - Returns to low-power sensor monitoring
@@ -53,7 +61,9 @@ POST http://192.168.x.x:8080/control/deactivate
 ---
 
 ### 3. Get Sentinel Status
+
 **Request:**
+
 ```bash
 GET https://your-ngrok-url.ngrok-free.app/status
 # or
@@ -61,6 +71,7 @@ GET http://192.168.x.x:8080/status
 ```
 
 **Response:**
+
 ```json
 {
   "mode": "SENTRY",
@@ -72,7 +83,9 @@ GET http://192.168.x.x:8080/status
 ---
 
 ### 4. Video Stream (Always Available)
+
 **Request:**
+
 ```bash
 GET https://your-ngrok-url.ngrok-free.app/stream
 # or
@@ -86,7 +99,9 @@ GET http://192.168.x.x:8080/stream
 ---
 
 ### 5. Health Check
+
 **Request:**
+
 ```bash
 GET https://your-ngrok-url.ngrok-free.app/health
 # or
@@ -94,6 +109,7 @@ GET http://192.168.x.x:8080/health
 ```
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -109,14 +125,17 @@ GET http://192.168.x.x:8080/health
 
 ```javascript
 // User clicks "View Live Feed" button
-app.post('/api/sentinel/:id/activate', async (req, res) => {
+app.post("/api/sentinel/:id/activate", async (req, res) => {
   const sentinel = await Sentinel.findById(req.params.id);
-  
+
   // Trigger intruder mode on sentinel
-  const response = await fetch(`${sentinel.streamUrl.replace('/stream', '')}/control/activate`, {
-    method: 'POST'
-  });
-  
+  const response = await fetch(
+    `${sentinel.streamUrl.replace("/stream", "")}/control/activate`,
+    {
+      method: "POST",
+    }
+  );
+
   if (response.ok) {
     // Redirect user to live stream
     res.json({ streamUrl: sentinel.streamUrl });
@@ -124,14 +143,17 @@ app.post('/api/sentinel/:id/activate', async (req, res) => {
 });
 
 // User closes feed
-app.post('/api/sentinel/:id/deactivate', async (req, res) => {
+app.post("/api/sentinel/:id/deactivate", async (req, res) => {
   const sentinel = await Sentinel.findById(req.params.id);
-  
-  await fetch(`${sentinel.streamUrl.replace('/stream', '')}/control/deactivate`, {
-    method: 'POST'
-  });
-  
-  res.json({ status: 'deactivated' });
+
+  await fetch(
+    `${sentinel.streamUrl.replace("/stream", "")}/control/deactivate`,
+    {
+      method: "POST",
+    }
+  );
+
+  res.json({ status: "deactivated" });
 });
 ```
 
@@ -143,23 +165,23 @@ import requests
 @app.route('/api/sentinel/<device_id>/activate', methods=['POST'])
 def activate_sentinel(device_id):
     sentinel = db.sentinels.find_one({'deviceId': device_id})
-    
+
     # Extract base URL from stream URL
     base_url = sentinel['streamUrl'].replace('/stream', '')
-    
+
     # Activate intruder mode
     response = requests.post(f"{base_url}/control/activate")
-    
+
     if response.ok:
         return jsonify({'streamUrl': sentinel['streamUrl']})
-    
+
     return jsonify({'error': 'Failed to activate'}), 500
 
 @app.route('/api/sentinel/<device_id>/deactivate', methods=['POST'])
 def deactivate_sentinel(device_id):
     sentinel = db.sentinels.find_one({'deviceId': device_id})
     base_url = sentinel['streamUrl'].replace('/stream', '')
-    
+
     requests.post(f"{base_url}/control/deactivate")
     return jsonify({'status': 'deactivated'})
 ```
@@ -173,18 +195,18 @@ def deactivate_sentinel(device_id):
 ```jsx
 function SentinelFeed({ sentinel }) {
   const [isActive, setIsActive] = useState(false);
-  
+
   const activateFeed = async () => {
     // Tell backend to activate sentinel
-    await fetch(`/api/sentinel/${sentinel.id}/activate`, { method: 'POST' });
+    await fetch(`/api/sentinel/${sentinel.id}/activate`, { method: "POST" });
     setIsActive(true);
   };
-  
+
   const deactivateFeed = async () => {
-    await fetch(`/api/sentinel/${sentinel.id}/deactivate`, { method: 'POST' });
+    await fetch(`/api/sentinel/${sentinel.id}/deactivate`, { method: "POST" });
     setIsActive(false);
   };
-  
+
   return (
     <div>
       <img src={sentinel.streamUrl} alt="Live feed" />
@@ -200,15 +222,19 @@ function SentinelFeed({ sentinel }) {
 ## Use Cases
 
 ### 1. On-Demand Monitoring
+
 User opens your webapp → Backend activates sentinel → User sees live feed with AI detection
 
 ### 2. Manual Investigation
+
 Alert received → Security views feed → Backend keeps intruder mode active → User closes → Backend deactivates
 
 ### 3. Scheduled Patrol
+
 Backend activates sentinel at specific times → AI monitors for X minutes → Auto-deactivate
 
 ### 4. Multi-Sentinel Dashboard
+
 Users select which sentinels to monitor → Backend activates only selected ones → Saves resources
 
 ---

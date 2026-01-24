@@ -7,6 +7,7 @@
 ---
 
 ## Table of Contents
+
 1. [System Overview](#system-overview)
 2. [Operation Logic](#operation-logic)
 3. [Backend API Endpoints](#backend-api-endpoints)
@@ -24,6 +25,7 @@
 ### What is ORION Sentinel?
 
 ORION is an AI-powered surveillance device running on Raspberry Pi 4 that:
+
 - Detects threats using YOLOv4-Tiny (person, car, truck, motorcycle, bus)
 - Streams live video via ngrok tunnel
 - Operates in two modes: SENTRY (low-power monitoring) and INTRUDER (active AI detection)
@@ -33,6 +35,7 @@ ORION is an AI-powered surveillance device running on Raspberry Pi 4 that:
 ### System Modes
 
 **SENTRY Mode (Default)**
+
 - Low power consumption
 - Camera OFF (battery saving)
 - Monitors GPIO sensors (PIR, vibration) and microphone
@@ -40,12 +43,14 @@ ORION is an AI-powered surveillance device running on Raspberry Pi 4 that:
 - Automatically enters INTRUDER mode when sensors trigger
 
 **INTRUDER Mode**
+
 - Camera ON
 - AI actively analyzing frames for threats
 - Sends alerts to backend when threats detected
 - Returns to SENTRY after timeout or manual deactivation
 
 ### Hardware Components
+
 - **Camera:** USB/CSI camera (640x480 @ 15 FPS)
 - **GPS:** Serial GPS module (4800 baud, currently mocked to Ghana coordinates)
 - **Microphone:** ADS1115 ADC (channel A1, threshold 5000)
@@ -101,6 +106,7 @@ The sentinel operates as a **state machine** with two primary modes:
 ### SENTRY Mode Operation
 
 **What's Active:**
+
 - ✅ GPIO sensors (PIR motion, vibration)
 - ✅ Microphone (sound level monitoring)
 - ✅ Web server (Flask + ngrok tunnel)
@@ -108,46 +114,49 @@ The sentinel operates as a **state machine** with two primary modes:
 - ❌ AI model unloaded (memory saving)
 
 **Main Loop (runs every 0.5s):**
+
 ```python
 while mode == SENTRY:
     # Check remote control requests
     if backend_requested_intruder_mode:
         enter_intruder_mode()
-    
+
     # Battery optimization: stop camera if idle
     if camera.is_active and stream_idle > 5_minutes:
         camera.release()  # Turn OFF
-    
+
     # Check sensors
     if PIR_triggered or VIBRATION_triggered:
         enter_intruder_mode()
-    
+
     # Check microphone
     if microphone.is_loud():  # Sound > threshold
         enter_intruder_mode()
-    
+
     sleep(0.5)
 ```
 
 ### INTRUDER Mode Operation
 
 **What's Active:**
+
 - ✅ Camera ON
 - ✅ AI model loaded (YOLOv4-Tiny)
 - ✅ Frame analysis every 0.1 seconds
 - ✅ All sensors still monitoring
 
 **Main Loop (runs every 0.1s):**
+
 ```python
 while mode == INTRUDER:
     # Check remote control requests
     if backend_requested_sentry_mode:
         enter_sentry_mode()
-    
+
     # Capture and analyze frame
     frame = camera.capture_frame()
     threat, confidence = ai.analyze_frame(frame)
-    
+
     # If threat found
     if threat and confidence >= 0.35:
         # Check cooldown (prevent spam)
@@ -155,17 +164,18 @@ while mode == INTRUDER:
             # Send alert in background thread
             send_alert_async(threat, confidence, frame)
             last_alert_time = now
-    
+
     # Auto-return to SENTRY after timeout
     if time_since_last_alert > 60_seconds:
         enter_sentry_mode()
-    
+
     sleep(0.1)  # 10 FPS detection rate
 ```
 
 ### AI Detection Process
 
 **Frame Analysis Pipeline:**
+
 ```
 1. Capture frame from camera (640x480)
    ↓
@@ -188,6 +198,7 @@ while mode == INTRUDER:
 ```
 
 **Example Detection Output:**
+
 ```
 🔍 Detected 3 object(s):
    • chair: 72.5% at [120, 200, 80, 100]
@@ -199,6 +210,7 @@ while mode == INTRUDER:
 ### Alert Sending Process
 
 **Non-Blocking Alert System:**
+
 ```
 Main Thread              Alert Thread
      │                        │
@@ -254,6 +266,7 @@ State 5: SENSOR TRIGGER
 ```
 
 **Battery Impact:**
+
 - Camera ON: ~2-5W power draw
 - Camera OFF: ~0W power draw
 - **Result:** 5-10x longer battery life
@@ -263,18 +276,21 @@ State 5: SENSOR TRIGGER
 The sentinel uses **4 concurrent threads:**
 
 **1. Main Thread (Orchestrator)**
+
 - Runs state machine (SENTRY ↔ INTRUDER)
 - Polls sensors every 0.5s
 - Controls mode transitions
 - Captures and analyzes frames in INTRUDER mode
 
 **2. Flask Thread (Web Server)**
+
 - Serves video stream (`/stream`)
 - Handles control endpoints (`/control/activate`, `/control/deactivate`)
 - Always running in background
 - Non-blocking, daemon thread
 
 **3. Microphone Thread (Audio Monitor)**
+
 - Continuously samples ADS1115 ADC
 - Calculates baseline noise level
 - Updates current sound level
@@ -282,6 +298,7 @@ The sentinel uses **4 concurrent threads:**
 - Daemon thread
 
 **4. Alert Threads (Dynamic)**
+
 - Created when threat detected
 - Encodes frame to JPEG → Base64
 - Sends POST request to backend
@@ -373,23 +390,28 @@ Sentinel: AI unloaded, camera auto-stops after 5 min idle
 ### Key Design Principles
 
 **1. Battery Conservation**
+
 - Camera OFF by default in SENTRY mode
 - Only activate when needed (triggers or stream requests)
 - Auto-sleep after 5 min idle
 
 **2. Spam Prevention**
+
 - 30-second cooldown between alerts
 - One alert per threat event (not per frame)
 
 **3. Non-Blocking I/O**
+
 - Alert sending in background threads
 - Camera never waits for network
 
 **4. Fail-Safe Operation**
+
 - Continue running even if backend unreachable
 - Log errors, don't crash
 
 **5. Resource Efficiency**
+
 - Unload AI when not needed (saves 23MB RAM)
 - Lightweight SENTRY loop (0.5s intervals)
 - On-demand model loading
@@ -405,10 +427,12 @@ These are the endpoints YOUR BACKEND must implement to receive data from the sen
 **Endpoint:** `POST http://192.168.1.100:5000/api/sentinels/register`
 
 **When Called:**
+
 - Once on sentinel startup
 - Contains device ID, location, battery level, and public stream URL
 
 **Request Payload:**
+
 ```json
 {
   "deviceId": "ORN-001",
@@ -423,6 +447,7 @@ These are the endpoints YOUR BACKEND must implement to receive data from the sen
 ```
 
 **Field Details:**
+
 - `deviceId` (string): Unique sentinel identifier
 - `status` (string): Always "active" on registration
 - `location.lat` (float): Latitude coordinate
@@ -431,19 +456,22 @@ These are the endpoints YOUR BACKEND must implement to receive data from the sen
 - `streamUrl` (string): Public ngrok URL for accessing video stream
 
 **Expected Response:**
+
 - Status: `200 OK` or `201 Created`
 - The sentinel considers registration successful on these status codes
 
 **Backend Actions:**
+
 - Store sentinel info in database (update if already exists)
 - Initialize sentinel status tracking
 - Store stream URL for later use
 
 **Example Implementation (Node.js/Express):**
+
 ```javascript
-app.post('/api/sentinels/register', async (req, res) => {
+app.post("/api/sentinels/register", async (req, res) => {
   const { deviceId, status, location, batteryLevel, streamUrl } = req.body;
-  
+
   // Upsert sentinel in database
   await Sentinel.findOneAndUpdate(
     { deviceId },
@@ -454,26 +482,27 @@ app.post('/api/sentinels/register', async (req, res) => {
       batteryLevel,
       streamUrl,
       lastSeen: new Date(),
-      isOnline: true
+      isOnline: true,
     },
     { upsert: true, new: true }
   );
-  
+
   console.log(`✅ Sentinel ${deviceId} registered with stream: ${streamUrl}`);
-  
-  res.status(201).json({ 
-    message: 'Sentinel registered successfully',
-    deviceId 
+
+  res.status(201).json({
+    message: "Sentinel registered successfully",
+    deviceId,
   });
 });
 ```
 
 **Example Implementation (Python/Flask):**
+
 ```python
 @app.route('/api/sentinels/register', methods=['POST'])
 def register_sentinel():
     data = request.json
-    
+
     # Upsert in database
     sentinel = db.sentinels.find_one_and_update(
         {'deviceId': data['deviceId']},
@@ -489,9 +518,9 @@ def register_sentinel():
         upsert=True,
         return_document=ReturnDocument.AFTER
     )
-    
+
     print(f"✅ Sentinel {data['deviceId']} registered")
-    
+
     return jsonify({
         'message': 'Sentinel registered successfully',
         'deviceId': data['deviceId']
@@ -505,11 +534,13 @@ def register_sentinel():
 **Endpoint:** `POST http://192.168.1.100:5000/api/alerts`
 
 **When Called:**
+
 - Whenever AI detects a threat (person, car, truck, motorcycle, bus)
 - Cooldown: 30 seconds between alerts for same sentinel
 - Only sent in INTRUDER mode
 
 **Request Payload:**
+
 ```json
 {
   "sentinelId": "ORN-001",
@@ -525,6 +556,7 @@ def register_sentinel():
 ```
 
 **Field Details:**
+
 - `sentinelId` (string): Device that detected the threat
 - `threatType` (string): Lowercase object class (person, car, truck, motorcycle, bus)
 - `confidence` (float): Detection confidence (0.0 to 1.0, typically 0.35-0.95)
@@ -533,10 +565,12 @@ def register_sentinel():
 - `imageData` (string): Base64-encoded JPEG image of detection (typically 30-80KB)
 
 **Expected Response:**
+
 - Status: `200 OK` or `201 Created`
 - Response body is ignored by sentinel
 
 **Backend Actions:**
+
 - Store alert in database
 - Update sentinel status to "alert"
 - Send notifications (SMS, push, email, etc.)
@@ -544,10 +578,12 @@ def register_sentinel():
 - Trigger webhooks or real-time updates to frontend
 
 **Example Implementation (Node.js/Express):**
+
 ```javascript
-app.post('/api/alerts', async (req, res) => {
-  const { sentinelId, threatType, confidence, location, timestamp, imageData } = req.body;
-  
+app.post("/api/alerts", async (req, res) => {
+  const { sentinelId, threatType, confidence, location, timestamp, imageData } =
+    req.body;
+
   // Save alert to database
   const alert = await Alert.create({
     sentinelId,
@@ -556,56 +592,59 @@ app.post('/api/alerts', async (req, res) => {
     location,
     timestamp: new Date(timestamp),
     imageUrl: null, // Will be set after saving image
-    status: 'new'
+    status: "new",
   });
-  
+
   // Decode and save image
   if (imageData) {
-    const imageBuffer = Buffer.from(imageData, 'base64');
+    const imageBuffer = Buffer.from(imageData, "base64");
     const imagePath = `alerts/${alert._id}.jpg`;
-    
+
     // Save to S3, local disk, etc.
     await saveImage(imagePath, imageBuffer);
     alert.imageUrl = imagePath;
     await alert.save();
   }
-  
+
   // Update sentinel status
   await Sentinel.findOneAndUpdate(
     { deviceId: sentinelId },
-    { 
-      status: 'alert',
+    {
+      status: "alert",
       lastAlert: new Date(),
-      lastSeen: new Date()
+      lastSeen: new Date(),
     }
   );
-  
+
   // Send notifications
   await sendPushNotification({
     title: `⚠️ Threat Detected: ${threatType}`,
-    body: `Sentinel ${sentinelId} detected ${threatType} with ${(confidence * 100).toFixed(0)}% confidence`,
-    data: { alertId: alert._id }
+    body: `Sentinel ${sentinelId} detected ${threatType} with ${(
+      confidence * 100
+    ).toFixed(0)}% confidence`,
+    data: { alertId: alert._id },
   });
-  
+
   // Emit real-time event to frontend
-  io.emit('alert', {
+  io.emit("alert", {
     alertId: alert._id,
     sentinelId,
     threatType,
     confidence,
-    timestamp
+    timestamp,
   });
-  
+
   console.log(`🚨 Alert: ${threatType} detected by ${sentinelId}`);
-  
-  res.status(201).json({ 
-    message: 'Alert received',
-    alertId: alert._id 
+
+  res.status(201).json({
+    message: "Alert received",
+    alertId: alert._id,
   });
 });
 ```
 
 **Image Decoding Example:**
+
 ```javascript
 // Node.js
 const imageBuffer = Buffer.from(imageData, 'base64');
@@ -627,11 +666,13 @@ with open(f'alert_{alert_id}.jpg', 'wb') as f:
 **Example URL:** `PUT http://192.168.1.100:5000/api/sentinels/ORN-001/status`
 
 **When Called:**
+
 - Periodically (every 60 seconds) while sentinel is running
 - After mode changes (SENTRY ↔ INTRUDER)
 - Fails silently if backend is unreachable
 
 **Request Payload:**
+
 ```json
 {
   "status": "active",
@@ -644,6 +685,7 @@ with open(f'alert_{alert_id}.jpg', 'wb') as f:
 ```
 
 **Field Details:**
+
 - `status` (string): Current sentinel status
   - `"active"` - SENTRY mode, normal operation
   - `"alert"` - INTRUDER mode, actively detecting threats
@@ -652,20 +694,23 @@ with open(f'alert_{alert_id}.jpg', 'wb') as f:
 - `batteryLevel` (integer): Battery percentage
 
 **Expected Response:**
+
 - Status: `200 OK`
 - Response is ignored by sentinel
 
 **Backend Actions:**
+
 - Update sentinel lastSeen timestamp
 - Update current status and location
 - Mark sentinel as offline if no update received for 90+ seconds
 
 **Example Implementation (Node.js/Express):**
+
 ```javascript
-app.put('/api/sentinels/:deviceId/status', async (req, res) => {
+app.put("/api/sentinels/:deviceId/status", async (req, res) => {
   const { deviceId } = req.params;
   const { status, location, batteryLevel } = req.body;
-  
+
   await Sentinel.findOneAndUpdate(
     { deviceId },
     {
@@ -673,20 +718,20 @@ app.put('/api/sentinels/:deviceId/status', async (req, res) => {
       location,
       batteryLevel,
       lastSeen: new Date(),
-      isOnline: true
+      isOnline: true,
     }
   );
-  
-  res.json({ message: 'Status updated' });
+
+  res.json({ message: "Status updated" });
 });
 
 // Background job: Mark sentinels offline if no heartbeat
 setInterval(async () => {
   const threshold = new Date(Date.now() - 90000); // 90 seconds
-  
+
   await Sentinel.updateMany(
     { lastSeen: { $lt: threshold }, isOnline: true },
-    { isOnline: false, status: 'offline' }
+    { isOnline: false, status: "offline" }
   );
 }, 30000); // Check every 30 seconds
 ```
@@ -698,6 +743,7 @@ setInterval(async () => {
 These are endpoints ON THE SENTINEL that your backend can call to control the device remotely.
 
 **Base URLs:**
+
 - Public: `https://xxxx-xx-xx-xx-xx.ngrok-free.app` (from registration payload)
 - Local: `http://192.168.x.x:8080` (for same-network testing)
 
@@ -710,6 +756,7 @@ These are endpoints ON THE SENTINEL that your backend can call to control the de
 **Request:** Empty body (POST with no payload)
 
 **Response:**
+
 ```json
 {
   "status": "success",
@@ -718,6 +765,7 @@ These are endpoints ON THE SENTINEL that your backend can call to control the de
 ```
 
 **What Happens:**
+
 1. Sentinel enters INTRUDER mode
 2. Camera initializes if not active
 3. AI model loads
@@ -728,17 +776,18 @@ These are endpoints ON THE SENTINEL that your backend can call to control the de
 **Use Case:** User clicks "View Live Feed" → Backend activates sentinel → User gets live feed with AI detection
 
 **Example:**
+
 ```javascript
 // Extract base URL from stream URL
-const baseUrl = sentinel.streamUrl.replace('/stream', '');
+const baseUrl = sentinel.streamUrl.replace("/stream", "");
 
 // Activate sentinel
 const response = await fetch(`${baseUrl}/control/activate`, {
-  method: 'POST'
+  method: "POST",
 });
 
 if (response.ok) {
-  console.log('Sentinel activated for AI detection');
+  console.log("Sentinel activated for AI detection");
 }
 ```
 
@@ -753,6 +802,7 @@ if (response.ok) {
 **Request:** Empty body
 
 **Response:**
+
 ```json
 {
   "status": "success",
@@ -761,6 +811,7 @@ if (response.ok) {
 ```
 
 **What Happens:**
+
 1. Sentinel returns to SENTRY mode
 2. AI model unloads (frees memory)
 3. Camera may turn off after idle timeout (5 min)
@@ -770,14 +821,15 @@ if (response.ok) {
 **Use Case:** User closes live feed → Backend deactivates sentinel → Saves battery/CPU
 
 **Example:**
+
 ```javascript
-const baseUrl = sentinel.streamUrl.replace('/stream', '');
+const baseUrl = sentinel.streamUrl.replace("/stream", "");
 
 await fetch(`${baseUrl}/control/deactivate`, {
-  method: 'POST'
+  method: "POST",
 });
 
-console.log('Sentinel deactivated');
+console.log("Sentinel deactivated");
 ```
 
 ---
@@ -789,6 +841,7 @@ console.log('Sentinel deactivated');
 **Purpose:** Check current sentinel mode and camera state
 
 **Response:**
+
 ```json
 {
   "mode": "SENTRY",
@@ -799,6 +852,7 @@ console.log('Sentinel deactivated');
 ```
 
 **Field Details:**
+
 - `mode` (string): Current mode ("SENTRY" or "INTRUDER")
 - `camera_active` (boolean): Whether camera is currently running
 - `ai_loaded` (boolean): Whether AI model is loaded in memory
@@ -817,12 +871,14 @@ console.log('Sentinel deactivated');
 **Response:** MJPEG stream (multipart/x-mixed-replace)
 
 **Behavior:**
+
 - First access automatically initializes camera if off
 - Stream is always available (works in both SENTRY and INTRUDER modes)
 - In SENTRY mode: Just video, no AI detection
 - In INTRUDER mode: Video + AI analyzing frames
 
 **Frontend Usage:**
+
 ```html
 <img src="https://xxxx.ngrok-free.app/stream" alt="Live Feed" />
 ```
@@ -840,6 +896,7 @@ console.log('Sentinel deactivated');
 **Request:** Empty body
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -848,22 +905,24 @@ console.log('Sentinel deactivated');
 ```
 
 **When to Use:**
+
 - Send every 60 seconds while user is viewing stream
 - Prevents camera from auto-stopping after 5 min idle
 - Stop sending when user closes stream
 
 **Example:**
+
 ```javascript
 let keepAliveInterval;
 
 function startStreamViewing(sentinel) {
   // Show stream
-  document.getElementById('feed').src = sentinel.streamUrl;
-  
+  document.getElementById("feed").src = sentinel.streamUrl;
+
   // Send keep-alive every 60 seconds
-  const baseUrl = sentinel.streamUrl.replace('/stream', '');
+  const baseUrl = sentinel.streamUrl.replace("/stream", "");
   keepAliveInterval = setInterval(() => {
-    fetch(`${baseUrl}/stream/keepalive`, { method: 'POST' });
+    fetch(`${baseUrl}/stream/keepalive`, { method: "POST" });
   }, 60000);
 }
 
@@ -883,6 +942,7 @@ function stopStreamViewing() {
 **Purpose:** Basic health check
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -895,6 +955,7 @@ function stopStreamViewing() {
 ## Data Flow & Architecture
 
 ### 1. Registration Flow
+
 ```
 Sentinel Startup
     ↓
@@ -910,6 +971,7 @@ Enter SENTRY Mode (camera OFF)
 ```
 
 ### 2. Threat Detection Flow
+
 ```
 Sensor Triggered (PIR/Vibration/Mic)
     ↓
@@ -933,6 +995,7 @@ Continue monitoring for 60s or until manual deactivation
 ```
 
 ### 3. On-Demand Viewing Flow
+
 ```
 User opens webapp
     ↓
@@ -958,6 +1021,7 @@ Camera auto-stops after 5 min idle
 ```
 
 ### 4. Heartbeat Flow
+
 ```
 Every 60 seconds:
     Sentinel → PUT /api/sentinels/{id}/status → Backend
@@ -975,28 +1039,32 @@ Backend background job (every 30s):
 ### Complete Backend (Node.js/Express + MongoDB)
 
 ```javascript
-const express = require('express');
-const mongoose = require('mongoose');
+const express = require("express");
+const mongoose = require("mongoose");
 const app = express();
 
-app.use(express.json({ limit: '10mb' })); // For base64 images
+app.use(express.json({ limit: "10mb" })); // For base64 images
 
 // Sentinel Schema
 const sentinelSchema = new mongoose.Schema({
   deviceId: { type: String, required: true, unique: true },
-  status: { type: String, enum: ['active', 'alert', 'offline'], default: 'active' },
+  status: {
+    type: String,
+    enum: ["active", "alert", "offline"],
+    default: "active",
+  },
   location: {
     lat: Number,
-    lng: Number
+    lng: Number,
   },
   batteryLevel: Number,
   streamUrl: String,
   lastSeen: Date,
   isOnline: { type: Boolean, default: true },
-  lastAlert: Date
+  lastAlert: Date,
 });
 
-const Sentinel = mongoose.model('Sentinel', sentinelSchema);
+const Sentinel = mongoose.model("Sentinel", sentinelSchema);
 
 // Alert Schema
 const alertSchema = new mongoose.Schema({
@@ -1005,20 +1073,24 @@ const alertSchema = new mongoose.Schema({
   confidence: { type: Number, required: true },
   location: {
     lat: Number,
-    lng: Number
+    lng: Number,
   },
   timestamp: { type: Date, required: true },
   imageUrl: String,
-  status: { type: String, enum: ['new', 'reviewed', 'dismissed'], default: 'new' }
+  status: {
+    type: String,
+    enum: ["new", "reviewed", "dismissed"],
+    default: "new",
+  },
 });
 
-const Alert = mongoose.model('Alert', alertSchema);
+const Alert = mongoose.model("Alert", alertSchema);
 
 // 1. Registration
-app.post('/api/sentinels/register', async (req, res) => {
+app.post("/api/sentinels/register", async (req, res) => {
   try {
     const { deviceId, status, location, batteryLevel, streamUrl } = req.body;
-    
+
     const sentinel = await Sentinel.findOneAndUpdate(
       { deviceId },
       {
@@ -1028,24 +1100,31 @@ app.post('/api/sentinels/register', async (req, res) => {
         batteryLevel,
         streamUrl,
         lastSeen: new Date(),
-        isOnline: true
+        isOnline: true,
       },
       { upsert: true, new: true }
     );
-    
+
     console.log(`✅ Sentinel ${deviceId} registered`);
-    res.status(201).json({ message: 'Registered', sentinelId: sentinel._id });
+    res.status(201).json({ message: "Registered", sentinelId: sentinel._id });
   } catch (error) {
-    console.error('Registration error:', error);
-    res.status(500).json({ error: 'Registration failed' });
+    console.error("Registration error:", error);
+    res.status(500).json({ error: "Registration failed" });
   }
 });
 
 // 2. Alerts
-app.post('/api/alerts', async (req, res) => {
+app.post("/api/alerts", async (req, res) => {
   try {
-    const { sentinelId, threatType, confidence, location, timestamp, imageData } = req.body;
-    
+    const {
+      sentinelId,
+      threatType,
+      confidence,
+      location,
+      timestamp,
+      imageData,
+    } = req.body;
+
     // Create alert
     const alert = await Alert.create({
       sentinelId,
@@ -1053,47 +1132,51 @@ app.post('/api/alerts', async (req, res) => {
       confidence,
       location,
       timestamp: new Date(timestamp),
-      imageUrl: null
+      imageUrl: null,
     });
-    
+
     // Save image
     if (imageData) {
-      const fs = require('fs');
+      const fs = require("fs");
       const path = `./uploads/alerts/${alert._id}.jpg`;
-      
+
       // Ensure directory exists
-      require('fs').mkdirSync('./uploads/alerts', { recursive: true });
-      
-      const imageBuffer = Buffer.from(imageData, 'base64');
+      require("fs").mkdirSync("./uploads/alerts", { recursive: true });
+
+      const imageBuffer = Buffer.from(imageData, "base64");
       fs.writeFileSync(path, imageBuffer);
-      
+
       alert.imageUrl = `/alerts/${alert._id}.jpg`;
       await alert.save();
     }
-    
+
     // Update sentinel
     await Sentinel.findOneAndUpdate(
       { deviceId: sentinelId },
-      { status: 'alert', lastAlert: new Date(), lastSeen: new Date() }
+      { status: "alert", lastAlert: new Date(), lastSeen: new Date() }
     );
-    
+
     // Send notification (implement your notification service)
     // await sendPushNotification(...);
-    
-    console.log(`🚨 Alert: ${threatType} (${(confidence * 100).toFixed(0)}%) from ${sentinelId}`);
-    res.status(201).json({ message: 'Alert received', alertId: alert._id });
+
+    console.log(
+      `🚨 Alert: ${threatType} (${(confidence * 100).toFixed(
+        0
+      )}%) from ${sentinelId}`
+    );
+    res.status(201).json({ message: "Alert received", alertId: alert._id });
   } catch (error) {
-    console.error('Alert error:', error);
-    res.status(500).json({ error: 'Failed to process alert' });
+    console.error("Alert error:", error);
+    res.status(500).json({ error: "Failed to process alert" });
   }
 });
 
 // 3. Status Updates
-app.put('/api/sentinels/:deviceId/status', async (req, res) => {
+app.put("/api/sentinels/:deviceId/status", async (req, res) => {
   try {
     const { deviceId } = req.params;
     const { status, location, batteryLevel } = req.body;
-    
+
     await Sentinel.findOneAndUpdate(
       { deviceId },
       {
@@ -1101,76 +1184,78 @@ app.put('/api/sentinels/:deviceId/status', async (req, res) => {
         location,
         batteryLevel,
         lastSeen: new Date(),
-        isOnline: true
+        isOnline: true,
       }
     );
-    
-    res.json({ message: 'Status updated' });
+
+    res.json({ message: "Status updated" });
   } catch (error) {
-    console.error('Status update error:', error);
-    res.status(500).json({ error: 'Failed to update status' });
+    console.error("Status update error:", error);
+    res.status(500).json({ error: "Failed to update status" });
   }
 });
 
 // Background job: Mark offline sentinels
 setInterval(async () => {
   const threshold = new Date(Date.now() - 90000); // 90 seconds
-  
+
   await Sentinel.updateMany(
     { lastSeen: { $lt: threshold }, isOnline: true },
-    { isOnline: false, status: 'offline' }
+    { isOnline: false, status: "offline" }
   );
 }, 30000);
 
 // Frontend endpoints
-app.get('/api/sentinels', async (req, res) => {
+app.get("/api/sentinels", async (req, res) => {
   const sentinels = await Sentinel.find({});
   res.json(sentinels);
 });
 
-app.get('/api/sentinels/:id', async (req, res) => {
+app.get("/api/sentinels/:id", async (req, res) => {
   const sentinel = await Sentinel.findById(req.params.id);
   res.json(sentinel);
 });
 
-app.get('/api/alerts', async (req, res) => {
+app.get("/api/alerts", async (req, res) => {
   const alerts = await Alert.find({}).sort({ timestamp: -1 }).limit(50);
   res.json(alerts);
 });
 
 // Remote control
-app.post('/api/sentinels/:id/activate', async (req, res) => {
+app.post("/api/sentinels/:id/activate", async (req, res) => {
   try {
     const sentinel = await Sentinel.findById(req.params.id);
-    const baseUrl = sentinel.streamUrl.replace('/stream', '');
-    
-    const response = await fetch(`${baseUrl}/control/activate`, { method: 'POST' });
-    
+    const baseUrl = sentinel.streamUrl.replace("/stream", "");
+
+    const response = await fetch(`${baseUrl}/control/activate`, {
+      method: "POST",
+    });
+
     if (response.ok) {
-      res.json({ status: 'activated', streamUrl: sentinel.streamUrl });
+      res.json({ status: "activated", streamUrl: sentinel.streamUrl });
     } else {
-      res.status(500).json({ error: 'Failed to activate' });
+      res.status(500).json({ error: "Failed to activate" });
     }
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.post('/api/sentinels/:id/deactivate', async (req, res) => {
+app.post("/api/sentinels/:id/deactivate", async (req, res) => {
   try {
     const sentinel = await Sentinel.findById(req.params.id);
-    const baseUrl = sentinel.streamUrl.replace('/stream', '');
-    
-    await fetch(`${baseUrl}/control/deactivate`, { method: 'POST' });
-    res.json({ status: 'deactivated' });
+    const baseUrl = sentinel.streamUrl.replace("/stream", "");
+
+    await fetch(`${baseUrl}/control/deactivate`, { method: "POST" });
+    res.json({ status: "deactivated" });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-mongoose.connect('mongodb://localhost/orion').then(() => {
-  app.listen(5000, '0.0.0.0', () => {
-    console.log('Backend running on port 5000');
+mongoose.connect("mongodb://localhost/orion").then(() => {
+  app.listen(5000, "0.0.0.0", () => {
+    console.log("Backend running on port 5000");
   });
 });
 ```
@@ -1178,100 +1263,105 @@ mongoose.connect('mongodb://localhost/orion').then(() => {
 ### Frontend Example (React)
 
 ```jsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from "react";
 
 function SentinelDashboard() {
   const [sentinels, setSentinels] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [selectedSentinel, setSelectedSentinel] = useState(null);
   const keepAliveInterval = useRef(null);
-  
+
   // Fetch sentinels
   useEffect(() => {
     fetchSentinels();
     fetchAlerts();
-    
+
     const interval = setInterval(() => {
       fetchSentinels();
       fetchAlerts();
     }, 10000); // Refresh every 10s
-    
+
     return () => clearInterval(interval);
   }, []);
-  
+
   const fetchSentinels = async () => {
-    const res = await fetch('/api/sentinels');
+    const res = await fetch("/api/sentinels");
     const data = await res.json();
     setSentinels(data);
   };
-  
+
   const fetchAlerts = async () => {
-    const res = await fetch('/api/alerts');
+    const res = await fetch("/api/alerts");
     const data = await res.json();
     setAlerts(data);
   };
-  
+
   const viewStream = async (sentinel) => {
     // Activate sentinel
-    await fetch(`/api/sentinels/${sentinel._id}/activate`, { method: 'POST' });
-    
+    await fetch(`/api/sentinels/${sentinel._id}/activate`, { method: "POST" });
+
     setSelectedSentinel(sentinel);
-    
+
     // Start keep-alive
-    const baseUrl = sentinel.streamUrl.replace('/stream', '');
+    const baseUrl = sentinel.streamUrl.replace("/stream", "");
     keepAliveInterval.current = setInterval(() => {
-      fetch(`${baseUrl}/stream/keepalive`, { method: 'POST' });
+      fetch(`${baseUrl}/stream/keepalive`, { method: "POST" });
     }, 60000);
   };
-  
+
   const closeStream = async () => {
     if (selectedSentinel) {
       // Deactivate sentinel
-      await fetch(`/api/sentinels/${selectedSentinel._id}/deactivate`, { method: 'POST' });
-      
+      await fetch(`/api/sentinels/${selectedSentinel._id}/deactivate`, {
+        method: "POST",
+      });
+
       // Stop keep-alive
       clearInterval(keepAliveInterval.current);
-      
+
       setSelectedSentinel(null);
     }
   };
-  
+
   return (
     <div className="dashboard">
       <h1>ORION Sentinels</h1>
-      
+
       {/* Sentinel Grid */}
       <div className="sentinels-grid">
-        {sentinels.map(sentinel => (
-          <div key={sentinel._id} className={`sentinel-card ${sentinel.status}`}>
+        {sentinels.map((sentinel) => (
+          <div
+            key={sentinel._id}
+            className={`sentinel-card ${sentinel.status}`}
+          >
             <h3>{sentinel.deviceId}</h3>
             <p>Status: {sentinel.status}</p>
             <p>Battery: {sentinel.batteryLevel}%</p>
-            <p>Online: {sentinel.isOnline ? '🟢' : '🔴'}</p>
+            <p>Online: {sentinel.isOnline ? "🟢" : "🔴"}</p>
             <button onClick={() => viewStream(sentinel)}>View Stream</button>
           </div>
         ))}
       </div>
-      
+
       {/* Stream Modal */}
       {selectedSentinel && (
         <div className="stream-modal">
           <div className="modal-content">
             <h2>{selectedSentinel.deviceId} - Live Feed</h2>
-            <img 
-              src={selectedSentinel.streamUrl} 
+            <img
+              src={selectedSentinel.streamUrl}
               alt="Live stream"
-              style={{ width: '100%', maxWidth: '800px' }}
+              style={{ width: "100%", maxWidth: "800px" }}
             />
             <button onClick={closeStream}>Close</button>
           </div>
         </div>
       )}
-      
+
       {/* Recent Alerts */}
       <div className="alerts-section">
         <h2>Recent Alerts</h2>
-        {alerts.map(alert => (
+        {alerts.map((alert) => (
           <div key={alert._id} className="alert-card">
             <img src={alert.imageUrl} alt="Alert" width="200" />
             <div>
@@ -1301,6 +1391,7 @@ export default SentinelDashboard;
 **Solution:** Camera only runs when needed
 
 **Behavior:**
+
 1. **Startup:** Camera OFF
 2. **Stream Request:** Camera turns ON automatically
 3. **Idle for 5 min:** Camera turns OFF (saves battery)
@@ -1310,11 +1401,13 @@ export default SentinelDashboard;
 ### Configuration
 
 In `modules/config.py`:
+
 ```python
 STREAM_TIMEOUT = 300  # Seconds before camera auto-stops (default: 5 min)
 ```
 
 Adjust based on your needs:
+
 - `60` = 1 minute (aggressive battery saving)
 - `300` = 5 minutes (balanced, recommended)
 - `600` = 10 minutes (less battery conscious)
@@ -1322,11 +1415,12 @@ Adjust based on your needs:
 ### Keep-Alive Implementation
 
 **When user is viewing stream:**
+
 ```javascript
 // Send keep-alive every 60 seconds
-const baseUrl = sentinel.streamUrl.replace('/stream', '');
+const baseUrl = sentinel.streamUrl.replace("/stream", "");
 const keepAliveInterval = setInterval(() => {
-  fetch(`${baseUrl}/stream/keepalive`, { method: 'POST' });
+  fetch(`${baseUrl}/stream/keepalive`, { method: "POST" });
 }, 60000);
 
 // Clear when user closes stream
@@ -1334,6 +1428,7 @@ clearInterval(keepAliveInterval);
 ```
 
 **Battery Impact:**
+
 - Without auto-sleep: 100% camera uptime = ~48 hours battery life
 - With auto-sleep: ~10% camera uptime = ~200+ hours battery life
 - **5x-10x battery improvement** depending on usage patterns
@@ -1347,16 +1442,17 @@ clearInterval(keepAliveInterval);
 **Detection:** No heartbeat received for 90 seconds
 
 **Backend Action:**
+
 ```javascript
 // Background job
 setInterval(async () => {
   const threshold = new Date(Date.now() - 90000);
-  
+
   await Sentinel.updateMany(
     { lastSeen: { $lt: threshold }, isOnline: true },
-    { isOnline: false, status: 'offline' }
+    { isOnline: false, status: "offline" }
   );
-  
+
   // Optional: Send notification
   const offlineSentinels = await Sentinel.find({ isOnline: false });
   for (const sentinel of offlineSentinels) {
@@ -1370,6 +1466,7 @@ setInterval(async () => {
 **Sentinel Behavior:** Alerts sent in background thread, failures logged but don't crash system
 
 **Backend Should:**
+
 - Always return 200/201 even if processing fails
 - Queue failed alerts for retry
 - Log all alert receipts
@@ -1377,11 +1474,13 @@ setInterval(async () => {
 ### Ngrok Tunnel Failures
 
 **Sentinel Behavior:**
+
 - Logs error but continues running
 - Falls back to local IP in registration
 - Retries ngrok on next startup
 
 **Backend Should:**
+
 - Accept both ngrok URLs and local IPs
 - Validate stream URL before showing to users
 - Handle unreachable streams gracefully
@@ -1389,13 +1488,14 @@ setInterval(async () => {
 ### Stream Access Errors
 
 **Frontend Should:**
+
 ```javascript
-<img 
-  src={sentinel.streamUrl} 
+<img
+  src={sentinel.streamUrl}
   alt="Live feed"
   onError={(e) => {
-    e.target.src = '/placeholder-offline.png';
-    showError('Stream unavailable');
+    e.target.src = "/placeholder-offline.png";
+    showError("Stream unavailable");
   }}
 />
 ```
@@ -1409,11 +1509,13 @@ setInterval(async () => {
 **Risk:** Anyone with ngrok URL can access stream
 
 **Mitigations:**
+
 - Ngrok URLs change on restart (not permanent)
 - Only backend stores URLs (don't expose in frontend)
 - Add authentication to Flask endpoints (future enhancement)
 
 **Recommended Implementation:**
+
 ```python
 # In web_server.py
 from functools import wraps
@@ -1438,11 +1540,13 @@ def video_stream():
 **Risk:** Base64 images can be 50-100KB, may impact database size
 
 **Mitigations:**
+
 - Store images in S3/cloud storage, not database
 - Implement image cleanup policy (delete after 30 days)
 - Use JPEG quality setting to control size
 
 **Storage Calculation:**
+
 - 1 alert = ~60KB image
 - 100 alerts/day = ~6MB/day
 - 30 days = ~180MB/month
@@ -1454,6 +1558,7 @@ def video_stream():
 **Current:** `http://192.168.1.100:5000/api`
 
 **Production:**
+
 - Use domain name instead: `https://api.yourdomain.com`
 - Enable HTTPS with SSL certificate
 - Use API gateway for rate limiting
@@ -1463,25 +1568,28 @@ def video_stream():
 **Risk:** Malicious or malfunctioning sentinel sends too many alerts
 
 **Mitigation Already Implemented:**
+
 - 30-second cooldown between alerts
 - Sentinel-side rate limiting
 
 **Additional Backend Protection:**
+
 ```javascript
 // Rate limit per sentinel
 const rateLimit = new Map();
 
-app.post('/api/alerts', async (req, res) => {
+app.post("/api/alerts", async (req, res) => {
   const { sentinelId } = req.body;
   const now = Date.now();
   const lastAlert = rateLimit.get(sentinelId) || 0;
-  
-  if (now - lastAlert < 20000) { // 20 second backend limit
-    return res.status(429).json({ error: 'Too many alerts' });
+
+  if (now - lastAlert < 20000) {
+    // 20 second backend limit
+    return res.status(429).json({ error: "Too many alerts" });
   }
-  
+
   rateLimit.set(sentinelId, now);
-  
+
   // Process alert...
 });
 ```
@@ -1491,11 +1599,13 @@ app.post('/api/alerts', async (req, res) => {
 ## Testing Checklist
 
 ### Initial Setup
+
 - [ ] Sentinel registers successfully
 - [ ] Backend receives registration with correct stream URL
 - [ ] Sentinel shows up as "online" in backend
 
 ### Alert Flow
+
 - [ ] Trigger sensor (PIR/vibration/microphone)
 - [ ] Sentinel enters INTRUDER mode
 - [ ] Backend receives alert with threat type
@@ -1504,24 +1614,28 @@ app.post('/api/alerts', async (req, res) => {
 - [ ] Sentinel returns to SENTRY after timeout
 
 ### Stream Access
+
 - [ ] Open stream URL in browser, camera activates
 - [ ] Stream displays video feed
 - [ ] Keep-alive prevents camera from stopping
 - [ ] Camera stops 5 min after closing stream
 
 ### Remote Control
+
 - [ ] Backend activates sentinel via `/control/activate`
 - [ ] Sentinel enters INTRUDER mode
 - [ ] Backend deactivates via `/control/deactivate`
 - [ ] Sentinel returns to SENTRY mode
 
 ### Error Scenarios
+
 - [ ] Backend offline during alert → Sentinel logs error, continues running
 - [ ] Ngrok tunnel fails → Sentinel uses local IP fallback
 - [ ] Network drops → Sentinel marked offline after 90s
 - [ ] Stream accessed when camera off → Camera auto-initializes
 
 ### Battery Testing
+
 - [ ] Camera turns off after 5 min idle
 - [ ] Keep-alive prevents auto-stop
 - [ ] Camera initializes on stream request
@@ -1534,6 +1648,7 @@ app.post('/api/alerts', async (req, res) => {
 ### Backend Configuration
 
 **Required Environment Variables:**
+
 ```bash
 MONGODB_URI=mongodb://localhost/orion
 PORT=5000
@@ -1542,6 +1657,7 @@ UPLOAD_DIR=./uploads/alerts
 ```
 
 **Optional:**
+
 ```bash
 NOTIFICATION_SERVICE_KEY=xxx
 PUSH_NOTIFICATION_URL=https://...
@@ -1553,6 +1669,7 @@ SENTRY_DSN=https://...
 File: `/home/josh/Documents/terra-sentry/orion/modules/config.py`
 
 **Key Settings:**
+
 ```python
 # Your Backend
 BACKEND_URL = "http://192.168.1.100:5000/api"  # Change to your production URL
@@ -1579,42 +1696,50 @@ NGROK_ENABLED = True  # Set False to use local IP only
 ### Common Issues
 
 **1. Sentinel not registering**
+
 - Check backend is running on correct IP/port
 - Verify firewall allows port 5000
 - Test: `curl http://192.168.1.100:5000/api/sentinels/register`
 
 **2. Alerts not received**
+
 - Check backend `/api/alerts` endpoint accepts POST
 - Verify backend can parse JSON with base64 strings
 - Check backend logs for errors
 
 **3. Stream won't load**
+
 - Verify ngrok tunnel is active (check sentinel logs)
 - Test stream URL directly in browser
 - Check if camera is initialized (`GET /status`)
 
 **4. High battery drain**
+
 - Verify STREAM_TIMEOUT is set (default 300s)
 - Ensure keep-alive stops when user closes stream
 - Check camera turns off after idle period
 
 **5. Ngrok authentication error**
+
 - Run: `ngrok config add-authtoken YOUR_TOKEN`
 - Or set `NGROK_ENABLED = False` in config.py
 
 ### Debug Endpoints
 
 **Check Sentinel Status:**
+
 ```bash
 curl https://your-ngrok-url.ngrok-free.app/status
 ```
 
 **Check Camera State:**
+
 ```bash
 curl https://your-ngrok-url.ngrok-free.app/health
 ```
 
 **Manual Activation:**
+
 ```bash
 curl -X POST https://your-ngrok-url.ngrok-free.app/control/activate
 ```
@@ -1624,6 +1749,7 @@ curl -X POST https://your-ngrok-url.ngrok-free.app/control/activate
 **Sentinel Logs:** Console output when running `python main.py`
 
 **Key Log Messages:**
+
 - `✅ Device registered successfully` - Registration worked
 - `🚨 INTRUDER MODE: Active threat detection!` - AI activated
 - `💤 SENTRY MODE: Monitoring sensors` - Low power mode
@@ -1637,6 +1763,7 @@ curl -X POST https://your-ngrok-url.ngrok-free.app/control/activate
 ## Version History
 
 **v1.0 (January 8, 2026)**
+
 - Initial release
 - YOLOv4-Tiny AI detection
 - Dual mode operation (SENTRY/INTRUDER)
@@ -1646,6 +1773,7 @@ curl -X POST https://your-ngrok-url.ngrok-free.app/control/activate
 - Ngrok tunnel support
 
 **Planned Features:**
+
 - Authentication tokens for stream access
 - Video recording on alert
 - Multi-sentinel coordination
