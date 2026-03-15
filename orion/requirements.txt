@@ -13,12 +13,22 @@ requests>=2.25.0
 pyngrok>=5.0.0
 
 # Hardware Interface (Raspberry Pi)
-RPi.GPIO>=0.7.0
+# Hardware Interface (Raspberry Pi)
+# Note: GPIO-based PIR/vibration sensors removed in audio-first design.
+# If you need RPi.GPIO for other integrations, add it back.
 
-# Serial Communication (for GPS)
+# Serial Communication (for GPS - optional)
 pyserial>=3.5
 
 # I2C/Hardware libs (for sensors & microphone)
 adafruit-circuitpython-ads1x15>=2.2.0
 adafruit-blinka>=8.0.0
+
+
+# NMEA parsing for Serial GPS (optional)
+pynmea2>=1.4.0
+
+# If you prefer to keep hardware deps optional at install time, consider
+# providing an extras_require group in a packaging file instead of listing
+# everything in this flat requirements.txt.
 

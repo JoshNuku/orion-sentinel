@@ -1,25 +1,13 @@
-"""
-Audio intelligence unit - lightweight, rule-based FFT detectors for
-Excavator, Chainsaw, and Human Speech. This is intentionally model-free
-to run efficiently on Raspberry Pi 4 using the ADS1115+MAX9814 analog mic.
-"""
+"""Audio intelligence unit - lightweight, rule-based FFT detectors."""
 import numpy as np
 import threading
-import math
 import logging
-from . import config
+from .. import config
 
 logger = logging.getLogger(__name__)
 
 
 class AudioIntelligenceUnit:
-    """Rule-based audio detector using spectral features.
-
-    Methods:
-    - load_model(model_path, class_names): stores class names (no model loaded)
-    - infer(audio_samples): returns (class_name, confidence)
-    """
-
     def __init__(self):
         self.lock = threading.Lock()
         self.classes = ["Silence", "Excavator", "Chainsaw", "Speech"]
@@ -29,7 +17,6 @@ class AudioIntelligenceUnit:
         self.thresholds = getattr(config, 'AUDIO_DETECTION', {})
 
     def load_model(self, model_path=None, class_names=None):
-        # For compatibility with main orchestrator: accept model path and class names
         if class_names:
             self.classes = class_names
         logger.info("🧠 AudioIntelligenceUnit ready (rule-based)")
@@ -39,7 +26,6 @@ class AudioIntelligenceUnit:
         logger.info("💤 AudioIntelligenceUnit unloaded")
 
     def _compute_spectrum(self, samples):
-        # Apply a Hann window and compute magnitude spectrum
         if len(samples) < self.window:
             pad = self.window - len(samples)
             samples = np.pad(samples, (0, pad))
@@ -57,27 +43,19 @@ class AudioIntelligenceUnit:
         return float(np.sum(mag[idx] ** 2))
 
     def _spectral_flatness(self, mag):
-        # Avoid zeros
         mag = np.where(mag <= 1e-12, 1e-12, mag)
         geo_mean = np.exp(np.mean(np.log(mag)))
         arith_mean = np.mean(mag)
         return float(geo_mean / (arith_mean + 1e-12))
 
     def infer(self, audio_samples):
-        """Infer audio class from raw ADC samples (1D numpy array).
-
-        Returns (class_name, confidence)
-        """
         try:
             if audio_samples is None or len(audio_samples) == 0:
                 return "Silence", 0.0
 
             with self.lock:
                 samples = np.asarray(audio_samples, dtype=np.float32)
-
-                # Normalize - ADS1115 values are integer counts; center around zero
                 samples = samples - np.mean(samples)
-
                 freqs, mag = self._compute_spectrum(samples)
                 total_energy = float(np.sum(mag ** 2)) + 1e-12
 
@@ -93,45 +71,28 @@ class AudioIntelligenceUnit:
                 mid_high_ratio = (mid_energy + high_energy) / total_energy
                 flatness = self._spectral_flatness(mag)
 
-                # Heuristics
-                # Excavator: dominant low-band energy
                 exc_thresh = self.thresholds.get('excavator', {})
                 if low_ratio >= exc_thresh.get('low_energy_ratio', 0.55):
-                    # confidence scales with low_ratio
                     conf = min(1.0, (low_ratio - exc_thresh.get('low_energy_ratio', 0.55)) / 0.45 + 0.5)
                     return "Excavator", max(conf, exc_thresh.get('min_confidence', 0.5))
 
-                # Chainsaw: broadband mid/high energy + low spectral tonalness (low flatness)
                 ch_thresh = self.thresholds.get('chainsaw', {})
                 if (mid_high_ratio >= ch_thresh.get('mid_high_energy_ratio', 0.45)) and (flatness <= ch_thresh.get('spectral_flatness', 0.1)):
                     conf = min(1.0, mid_high_ratio + (0.1 - flatness))
                     return "Chainsaw", max(conf, ch_thresh.get('min_confidence', 0.5))
 
-                # Speech: centroid not too high, some mid energy, moderate zero-crossing rate
-                # Use spectral centroid as proxy
                 centroid = float(np.sum(freqs * mag) / (np.sum(mag) + 1e-12))
                 sp_thresh = self.thresholds.get('speech', {})
-                # Estimate zero crossing rate as simple proxy
                 zcr = float(((np.diff(np.sign(samples)) != 0).sum()) / float(len(samples)))
                 if centroid <= sp_thresh.get('centroid_max', 3000) and zcr <= sp_thresh.get('zcr_max', 0.15) and mid_energy / total_energy > 0.1:
                     conf = min(1.0, 1.0 - (centroid / (sp_thresh.get('centroid_max', 3000) * 1.5)))
                     return "Speech", max(conf, sp_thresh.get('min_confidence', 0.5))
 
-                # Otherwise, silence/unknown
                 return "Silence", 0.0
 
         except Exception as e:
-            """Compatibility wrapper for split AI modules.
+            logger.error(f"❌ Audio inference error: {e}")
+            return None, 0.0
 
-            This module re-exports `AudioIntelligenceUnit` and `IntelligenceUnit`
-            from `ai_audio.py` and `ai_vision.py` for backwards compatibility with
-            existing imports that reference `orion.modules.ai_engine`.
-            """
-
-            from .ai.audio import AudioIntelligenceUnit
-            from .ai.vision import IntelligenceUnit
-
-            __all__ = ['AudioIntelligenceUnit', 'IntelligenceUnit']
-import numpy as np
-
-import logging
+    def is_loaded(self):
+        return True

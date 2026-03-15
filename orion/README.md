@@ -7,7 +7,7 @@
 - **Dual-Mode Operation**: Low-power sentry mode + active intruder detection
 - **AI Threat Detection**: MindSpore/ONNX model for heavy machinery detection
 - **Automatic Ngrok Tunneling**: Public video streaming without manual setup
-- **Multi-Sensor Fusion**: PIR motion, vibration, GPS tracking
+- **Audio-First Design**: Microphone (MAX9814 + ADS1115) and GPS tracking
 - **Backend Integration**: Real-time alerts and device registration
 - **Modular Architecture**: Clean separation of concerns
 
@@ -53,8 +53,7 @@ Edit `modules/config.py`:
 ```python
 DEVICE_ID = "ORN-001"              # Your device ID
 BACKEND_URL = "http://192.168.1.100:5000/api"  # Your backend URL
-PIR_PIN = 17                        # Motion sensor GPIO
-VIBRATION_PIN = 27                  # Vibration sensor GPIO
+# Audio-first mode: microphone connected via ADS1115 ADC (see docs)
 ```
 
 ### 4. Place AI Model
@@ -106,180 +105,116 @@ Device ID: ORN-001
 💤 SENTRY MODE: Monitoring sensors...
 ```
 
-### Access Video Stream
+# Project ORION — Consolidated Guide
 
-- **Local**: `http://localhost:8080/stream`
-- **Public**: Check logs for ngrok URL (e.g., `https://abc123.ngrok.io/stream`)
+This README consolidates device setup, hardware wiring, software structure,
+and developer notes for the audio-first ORION sentinel.
 
-## 🔧 Hardware Wiring
+Overview
+- Audio-first edge sentinel using MAX9814 (mic amp) -> ADS1115 (I2C ADC) to
+  detect Excavator/Chainsaw/Speech, trigger camera confirmation and send
+  alerts to a backend.
 
-### GPIO Sensors (BCM Numbering)
+Key components
+- Microphone: MAX9814 (analog) -> ADS1115 AIN (or attach a driver for USB mic)
+- ADC: ADS1115 (I2C) — sample at a practical ADC poll rate and resample for
+  analysis
+- GPS: u-blox NEO-7M (serial NMEA) — use the `SerialGPSDriver` provided
+- Camera: Raspberry Pi CSI or USB webcam (OpenCV)
+- Vision: YOLOv3-tiny (OpenCV DNN) for visual confirmation
 
-| Component            | Pi Pin | GPIO    | Notes             |
-| -------------------- | ------ | ------- | ----------------- |
-| PIR Sensor OUT       | 11     | GPIO 17 | Motion detection  |
-| Vibration Sensor OUT | 13     | GPIO 27 | Vibration trigger |
-| PIR/Vibration VCC    | 1      | 3.3V    | Power             |
-| PIR/Vibration GND    | 6      | GND     | Ground            |
+Repository layout (important files)
+- `main.py` — Orchestrator and state machine
+- `modules/config.py` — Single source of configuration
+- `modules/hardware.py` — Camera manager, `MicrophoneMonitor` (buffer + sim)
+- `modules/ai_engine.py` — Compatibility wrapper for split AI modules
+- `modules/ai_audio.py` — AudioIntelligenceUnit (rule-based FFT heuristics)
+- `modules/ai_vision.py` — IntelligenceUnit (YOLOv3-Tiny wrapper)
+- `modules/communication.py` — Backend requests
+- `modules/hardware_components/` — Driver interfaces and examples
 
-### GPS Module
-
-| GPS | Pi Pin | GPIO           | Notes                       |
-| --- | ------ | -------------- | --------------------------- |
-| VCC | 1      | 3.3V           | Or 5V if module requires    |
-| GND | 6      | GND            | Ground                      |
-| TX  | 10     | GPIO 15 (RXD0) | GPS transmits → Pi receives |
-| RX  | 8      | GPIO 14 (TXD0) | Pi transmits → GPS receives |
-
-### Camera
-
-- Use Raspberry Pi Camera Module (CSI) or USB webcam
-
-## 🧠 AI Model
-
-The system expects a YOLO-style object detection model trained on:
-
-- **Classes**: JCB, Excavator (update in `config.py`)
-- **Input Size**: 320x320 (update `INPUT_SIZE` if different)
-- **Format**: MindSpore `.ms` or ONNX `.onnx`
-
-### Model Output Expected
-
-```python
-# Should return list of detections:
-[
-    (class_name, confidence, bbox),
-    ...
-]
-```
-
-Update parsing logic in `ai_engine.py` if your model uses a different format.
-
-## 🌐 Backend API
-
-The sentinel expects the following endpoints:
-
-### POST `/api/sentinels/register`
-
-```json
-{
-  "deviceId": "ORN-001",
-  "status": "active",
-  "location": { "lat": 6.6745, "lng": -1.5716 },
-  "batteryLevel": 85,
-  "streamUrl": "https://abc123.ngrok.io/stream"
-}
-```
-
-### POST `/api/alerts`
-
-```json
-{
-  "sentinelId": "ORN-001",
-  "threatType": "Excavator",
-  "confidence": 0.95,
-  "location": { "lat": 6.6745, "lng": -1.5716 },
-  "timestamp": "2026-01-07T12:34:56.789Z"
-}
-```
-
-### PUT `/api/sentinels/{deviceId}/status`
-
-```json
-{
-  "status": "active",
-  "location": { "lat": 6.6745, "lng": -1.5716 },
-  "batteryLevel": 85
-}
-```
-
-## 🐛 Troubleshooting
-
-### No Video Stream
+Quick start
+1. Create and activate a venv, then install requirements:
 
 ```bash
-# Check camera
-vcgencmd get_camera
-
-# Test camera manually
-raspistill -o test.jpg
-
-# Check if port is in use
-sudo lsof -i :8080
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r orion/requirements.txt
 ```
 
-### Ngrok Fails
+2. Enable Pi interfaces (if using Raspberry Pi hardware):
 
 ```bash
-# Install ngrok separately if needed
-pip install pyngrok
-
-# Or use manual tunnel
-ngrok http 8080
+sudo raspi-config nonint do_serial 2   # enable serial
+sudo raspi-config nonint do_i2c 0      # enable i2c
+sudo raspi-config nonint do_camera 0   # enable camera (if using CSI)
+sudo reboot
 ```
 
-### GPIO Errors
+3. Wire hardware:
+- MAX9814 OUT -> ADS1115 A1
+- ADS1115 VCC -> 3.3V, GND -> GND, SDA/SCL -> I2C pins
+- NEO-7M TX -> Pi RX (GPIO15/ttyAMA0), RX -> Pi TX (GPIO14)
+
+4. Start the sentinel:
 
 ```bash
-# Check GPIO status
-gpio readall
-
-# Ensure user is in gpio group
-sudo usermod -a -G gpio $USER
+cd /home/josh/Documents/terra-sentry/orion
+python3 main.py
 ```
 
-### AI Model Not Loading
+Driver integration
+- `orion/modules/hardware_components/mic_driver.py` contains `MicDriverBase` and
+  `ADS1115Driver` that can initialize ADS1115 for you. Attach with:
 
-- Check model file path in `config.py`
-- Verify model format matches library (MindSpore vs ONNX)
-- Check model input shape matches `INPUT_SIZE`
+```py
+from orion.modules.hardware import MicrophoneMonitor
+from orion.modules.hardware_components.mic_driver import ADS1115Driver
 
-## 📝 Customization
-
-### Add New Sensors
-
-Edit `modules/hardware.py`:
-
-```python
-class GPIOSensors:
-    def __init__(self):
-        # Add your sensor pin
-        GPIO.setup(NEW_SENSOR_PIN, GPIO.IN)
-
-    def new_sensor_check(self):
-        return GPIO.input(NEW_SENSOR_PIN)
+mic = MicrophoneMonitor()
+driver = ADS1115Driver(channel=config.MIC_CHANNEL)
+mic.set_driver(driver)
+mic.initialize()
+mic.start_monitoring()
 ```
 
-### Change Detection Classes
+- GPS: `orion/modules/hardware_components/gps_driver.py` provides
+  `SerialGPSDriver` that opens a serial port and parses NMEA via `pynmea2`.
+  Attach/replace the `GPSTracker` with a wrapper that calls the driver's
+  `get_location()`.
 
-Edit `modules/config.py`:
+Notes on the NEO-7M (u-blox)
+- The NEO-7M outputs NMEA sentences over UART. Typical settings:
+  - Baud: 9600 (default)
+  - Interface: TX->Pi RX0 (ttyAMA0) if using GPIO serial
+- Use `pynmea2` to parse sentences and extract latitude/longitude. The
+  provided `SerialGPSDriver` will attempt to read and return a valid fix.
 
-```python
-CLASS_NAMES = ["JCB", "Excavator", "Bulldozer", "Crane"]
-```
+AI and detection flow
+- The system listens in SENTRY mode using `MicrophoneMonitor.get_audio_clip()`
+  and runs `AudioIntelligenceUnit.infer()` to detect suspicious sounds.
+- On detection (Excavator/Chainsaw), the sentinel enters confirmation mode:
+  camera is started and `IntelligenceUnit` (YOLO) attempts visual verification.
+- Alerts are sent via `Communicator.send_alert()` with payload containing
+  `sentinelId`, `threatType`, `confidence`, `location`, `timestamp`, and
+  optional `imageData`/`streamUrl`.
 
-### Adjust Timing
+Testing without hardware
+- Use `MicrophoneMonitor.load_simulation(wav_path)` to stream a WAV into the
+  ADC buffer and exercise detection paths. See `orion/test_audio.py` for a
+  replay harness.
 
-Edit `modules/config.py`:
+Single README policy
+- Auxiliary documentation in this repository has been consolidated here.
+  If you have a specific section you'd like expanded (backend integration,
+  or hardware wiring diagrams), tell me and I'll add it.
 
-```python
-ALERT_COOLDOWN = 60      # Alert every 60 seconds
-STREAM_DURATION = 120    # Stay in intruder mode for 2 minutes
-```
-
-## 📄 License
-
-MIT License - Feel free to use and modify
-
-## 🆘 Support
-
-For issues or questions:
-
-1. Check logs for error messages
-2. Verify hardware connections
-3. Test components individually (GPS, camera, sensors)
-4. Check backend connectivity
+Next steps you may want
+- Integrate ADS1115Driver into `main.py` startup (I can do this for you).
+- Replace the mock `GPSTracker` with the `SerialGPSDriver` wrapper.
+- Add a small test that replays labeled WAVs and asserts expected alerts.
 
 ---
 
-**Project ORION** - Securing sites with AI 🛡️
+For full developer details, see `orion/modules` code and the `hardware_components`
+package for driver examples.
