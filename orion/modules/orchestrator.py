@@ -200,14 +200,30 @@ class OrionSentinel:
                 _, jpeg_buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
                 frame_base64 = base64.b64encode(jpeg_buffer).decode('utf-8')
 
+        # Mapping to match backend enums
+        threat_type_map = {
+            'Excavator': 'excavator',
+            'Chainsaw': 'chainsaw',
+            'Speech': 'speech',
+            'person': 'person',
+            'car': 'car',
+            'truck': 'truck',
+            'motorcycle': 'motorcycle',
+            'bus': 'bus',
+            'animal': 'animal'
+        }
+        mapped_threat = threat_type_map.get(threat_type, threat_type.lower())
+        
+        mapped_trigger = 'microphone' if not visual_class else 'ai'
+
         try:
             self.comms.send_alert(
-                threat_type,
+                mapped_threat,
                 confidence,
                 self.gps.get_location(),
                 frame_base64,
                 triggered_sensors=self.current_triggered_sensors,
-                trigger_type='microphone' if not visual_class else 'ai'
+                trigger_type=mapped_trigger
             )
         except Exception as e:
             logger.error(f"❌ Failed to send priority alert: {e}")
@@ -283,6 +299,9 @@ class OrionSentinel:
                 'bus': 'bus',
                 'animal': 'animal',
                 'unknown': 'unknown',
+                'Excavator': 'excavator',
+                'Chainsaw': 'chainsaw',
+                'Speech': 'speech',
             }
             mapped_threat = threat_type_map.get(threat, 'unknown')
 

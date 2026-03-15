@@ -155,8 +155,7 @@ class Communicator:
             if trigger_type:
                 payload["triggerType"] = trigger_type
 
-            # Optional trigger type may be attached by caller
-            # (e.g., 'gpio', 'microphone', 'remote', 'ai')
+            # (e.g., 'microphone', 'remote', 'ai')
             # If provided, callers should pass trigger_type via keyword argument.
             # Note: Keep backward compatibility by accepting callers that don't pass it.
             # The method signature for update_status has been extended to accept

@@ -16,9 +16,8 @@ NGROK_ENABLED = True  # Set to True if you have ngrok authtoken configured
 # GPIO PINS (BCM Mode)
 # ============================================================================
 
-# Note: PIR and vibration GPIO sensors have been removed in the
-# "sound-first" architecture. Audio (MAX9814 + ADS1115) is now the
-# primary trigger source.
+# Note: This is a "sound-first" architecture. Audio (MAX9814 + ADS1115) is 
+# the primary trigger source. No external GPIO pins are used for triggers.
 
 # ============================================================================
 # MICROPHONE CONFIGURATION (ADS1115)
