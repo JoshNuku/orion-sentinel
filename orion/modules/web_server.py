@@ -6,7 +6,7 @@ Flask video streaming with automatic Ngrok tunneling
 import time
 import logging
 import threading
-from flask import Flask, Response
+from flask import Flask, Response, request
 from pyngrok import ngrok
 from . import config
 
@@ -62,13 +62,7 @@ class VideoServer:
             """Backend can activate intruder mode on demand"""
             if self.sentinel:
                 # Handle optional ngrok header (some clients send this)
-                ngrok_header = None
-                try:
-                    ngrok_header = self.app.request.headers.get('ngrok-skip-browser-warning')
-                except Exception:
-                    # Flask may not expose request in this closure in some contexts; ignore
-                    ngrok_header = None
-
+                ngrok_header = request.headers.get('ngrok-skip-browser-warning')
                 if ngrok_header:
                     logger.info(f"Received ngrok header for activate: {ngrok_header}")
 
@@ -80,11 +74,7 @@ class VideoServer:
         def deactivate_intruder():
             """Backend can deactivate intruder mode"""
             if self.sentinel:
-                try:
-                    ngrok_header = self.app.request.headers.get('ngrok-skip-browser-warning')
-                except Exception:
-                    ngrok_header = None
-
+                ngrok_header = request.headers.get('ngrok-skip-browser-warning')
                 if ngrok_header:
                     logger.info(f"Received ngrok header for deactivate: {ngrok_header}")
 
